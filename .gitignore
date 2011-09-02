@@ -17,3 +17,4 @@ debian/*.substvars
 debian/*/
 python/build/
 python/*.egg-info/
+*.tmproj
