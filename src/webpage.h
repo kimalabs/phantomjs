@@ -47,6 +47,7 @@ class WebPage: public QObject
     Q_PROPERTY(QVariantMap paperSize READ paperSize WRITE setPaperSize)
     Q_PROPERTY(QVariantMap clipRect READ clipRect WRITE setClipRect)
     Q_PROPERTY(QVariantMap scrollPosition READ scrollPosition WRITE setScrollPosition)
+    Q_PROPERTY(QVariantList blockedUrls READ blockedUrls WRITE setBlockedUrls)
 
 public:
     WebPage(QObject *parent = 0);
@@ -72,9 +73,14 @@ public:
     void setPaperSize(const QVariantMap &size);
     QVariantMap paperSize() const;
 
+    void setBlockedUrls(const QVariantList &urls);
+    QVariantList blockedUrls() const;
+
 public slots:
     void openUrl(const QString &address, const QVariant &op, const QVariantMap &settings);
     void release();
+    bool acceptNavigationRequest (QWebFrame * frame, const QNetworkRequest & request, QWebPage::NavigationType type );
+
 
     QVariant evaluate(const QString &code);
     bool render(const QString &fileName);
@@ -105,6 +111,8 @@ private:
     QPoint m_scrollPosition;
     QVariantMap m_paperSize; // For PDF output via render()
     QString m_libraryPath;
+
+    QVariantList m_blockedUrls; // List of regexes or strings of blocked URLs
 
     QImage renderImage();
     bool renderPdf(const QString &fileName);

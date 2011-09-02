@@ -30,6 +30,7 @@
 
 #include "webpage.h"
 
+#include <iostream>
 #include <math.h>
 
 #include <QApplication>
@@ -70,6 +71,9 @@ public slots:
     }
 
 protected:
+    bool acceptNavigationRequest (QWebFrame * frame, const QNetworkRequest & request, NavigationType type ) {
+        return m_webPage->acceptNavigationRequest(frame, request, type);
+    }
 
     QString chooseFile(QWebFrame *originatingFrame, const QString &oldFile) {
         Q_UNUSED(originatingFrame);
@@ -162,6 +166,17 @@ void WebPage::setContent(const QString &content)
 }
 
 
+QVariantList WebPage::blockedUrls() const
+{
+    return m_blockedUrls;
+}
+
+void WebPage::setBlockedUrls(const QVariantList &urls)
+{
+    m_blockedUrls = urls;
+}
+
+
 QString WebPage::libraryPath() const
 {
    return m_libraryPath;
@@ -186,6 +201,35 @@ void WebPage::applySettings(const QVariantMap &def)
 
     if (def.contains(PAGE_SETTINGS_USER_AGENT))
         m_webPage->m_userAgent = def[PAGE_SETTINGS_USER_AGENT].toString();
+}
+
+/* Accept all navigation requests except as specifically blocked in the blockedUrls list.
+ * Blocked URLs can be either regular expressions or strings -- in which case the strings
+ * are prefix-matched against the loaded URL.  E.g., "http://target.com" will block *all*
+ * URLs starting with "http://target.com" but not http://www.target.com or https://target.com
+ */
+bool WebPage::acceptNavigationRequest ( QWebFrame * frame, const QNetworkRequest & request, QWebPage::NavigationType type )
+{
+    if(m_blockedUrls.isEmpty()) return true;
+
+    QVariantList::Iterator it = m_blockedUrls.begin();
+    while(it != m_blockedUrls.end()) {
+        QVariant item = *it;
+
+        if(item.canConvert<QRegExp>()) {
+            QRegExp regexValue = item.toRegExp();
+            if(regexValue.indexIn(request.url().toString()) != -1) {
+                return false;
+            }
+        } else if(item.canConvert<QString>()) {
+            QString stringValue = item.toString();
+            if(request.url().toString().indexOf(stringValue) == 0) {
+                return false;
+            }
+        }
+        ++it;
+    }
+    return true;
 }
 
 QString WebPage::userAgent() const
