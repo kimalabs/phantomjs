@@ -165,8 +165,8 @@ WebPage::WebPage(QObject *parent)
     //QWebInspector *inspector = new QWebInspector;
     //m_webPage->settings()->setAttribute(QWebSettings::DeveloperExtrasEnabled, true);
 
-    inspector->setPage(m_webPage);
-    inspector->setVisible(true);
+    //inspector->setPage(m_webPage);
+    //inspector->setVisible(true);
 
 
     connect(m_mainFrame, SIGNAL(javaScriptWindowObjectCleared()), SIGNAL(initialized()));
