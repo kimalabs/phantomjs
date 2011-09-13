@@ -189,6 +189,11 @@ QVariantMap Phantom::version() const
     return result;
 }
 
+QString Phantom::readLine()
+{
+    return Terminal::instance()->cin();
+}
+
 // public slots:
 QObject *Phantom::createWebPage()
 {

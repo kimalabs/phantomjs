@@ -69,6 +69,13 @@ void Terminal::cerr(const QString &string, const bool newline) const
     output(std::cerr, string, newline);
 }
 
+QString Terminal::cin() const
+{
+    char data[32768];
+    std::cin.getline(data, sizeof data);
+    return m_encoding.decode(data);
+}
+
 // private
 void Terminal::output(std::ostream &out, const QString &string, const bool newline) const
 {

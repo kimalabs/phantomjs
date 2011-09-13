@@ -47,6 +47,7 @@ public:
 
     void cout(const QString &string, const bool newline = true) const;
     void cerr(const QString &string, const bool newline = true) const;
+    QString cin() const;
 
 private:
     void output(std::ostream &out, const QString &string, const bool newline) const;
