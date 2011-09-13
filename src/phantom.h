@@ -49,6 +49,7 @@ class Phantom: public QObject
     Q_PROPERTY(QString outputEncoding READ outputEncoding WRITE setOutputEncoding)
     Q_PROPERTY(QString scriptName READ scriptName)
     Q_PROPERTY(QVariantMap version READ version)
+    Q_PROPERTY(QVariantList blockedUrls READ blockedUrls WRITE setBlockedUrls)
 
 public:
     Phantom(QObject *parent = 0);
@@ -69,6 +70,9 @@ public:
     QString scriptName() const;
 
     QVariantMap version() const;
+
+    void setBlockedUrls(const QVariantList &urls);
+    QVariantList blockedUrls() const;
 
 public slots:
     QObject *createWebPage();

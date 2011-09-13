@@ -76,6 +76,8 @@ public:
     void setBlockedUrls(const QVariantList &urls);
     QVariantList blockedUrls() const;
 
+    QUrl currentUrl() const;
+
 public slots:
     void openUrl(const QString &address, const QVariant &op, const QVariantMap &settings);
     void release();

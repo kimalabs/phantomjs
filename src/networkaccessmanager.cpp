@@ -34,6 +34,9 @@
 #include <QNetworkRequest>
 #include <QNetworkReply>
 #include <QNetworkDiskCache>
+#include <QRegExp>
+
+#include <iostream>
 
 #include "networkaccessmanager.h"
 #include "networkreplyproxy.h"
@@ -90,11 +93,67 @@ NetworkAccessManager::~NetworkAccessManager()
         delete m_networkDiskCache;
 }
 
+QVariantList NetworkAccessManager::blockedUrls() const
+{
+    return m_blockedUrls;
+}
+
+void NetworkAccessManager::setBlockedUrls(const QVariantList &urls)
+{
+    m_blockedUrls = urls;
+}
+
+
+/* Accept all navigation requests except as specifically blocked in the blockedUrls list.
+ * Blocked URLs can be either regular expressions or strings -- in which case the strings
+ * are prefix-matched against the loaded URL.  E.g., "http://target.com" will block *all*
+ * URLs starting with "http://target.com" but not http://www.target.com or https://target.com
+ */
+// protected
+bool NetworkAccessManager::shouldLoadUrl ( const QString & url )
+{
+    return true;
+    if(m_blockedUrls.isEmpty()) return true;
+
+    QVariantList::Iterator it = m_blockedUrls.begin();
+    while(it != m_blockedUrls.end()) {
+        QVariant item = *it;
+
+        if(item.canConvert<QRegExp>()) {
+            QRegExp regexValue = item.toRegExp();
+            if(regexValue.indexIn(url) != -1) {
+                std::cerr << "Blocking URL " << qPrintable(url) << " due to regex match." << std::endl;
+                return false;
+            }
+        } else if(item.canConvert<QString>()) {
+            QString stringValue = item.toString();
+            if(url.indexOf(stringValue) == 0) {
+                std::cerr << "Blocking URL " << qPrintable(url) << " due to string match. << std::endl";
+                return false;
+            }
+        }
+        ++it;
+    }
+    return true;
+}
+
+
 // protected:
 QNetworkReply *NetworkAccessManager::createRequest(Operation op, const QNetworkRequest & req, QIODevice * outgoingData)
 {
+//    std::cerr << "Network request creating for " << qPrintable(req.url().toString()) << std::endl;
+    QNetworkReply *reply;
+
+    if(!shouldLoadUrl(req.url().toString())) {
+        std::cerr << "Blocking network request to " << qPrintable(req.url().toString()) << std::endl;
+        QNetworkRequest fakeRequest = QNetworkRequest(req);
+        fakeRequest.setUrl(QUrl("about:blank"));
+        reply = QNetworkAccessManager::createRequest(op, fakeRequest, outgoingData);
+    } else {
     // Pass duty to the superclass - Nothing special to do here (yet?)
-    QNetworkReply *reply = QNetworkAccessManager::createRequest(op, req, outgoingData);
+        reply = QNetworkAccessManager::createRequest(op, req, outgoingData);
+    }
+
     if(m_ignoreSslErrors) {
         reply->ignoreSslErrors();
     }
@@ -142,7 +201,7 @@ void NetworkAccessManager::handleStarted()
     }
 
     QVariantMap data;
-    data["stage"] = "start";
+
     data["id"] = m_ids.value(reply);
     data["url"] = reply->url().toString();
     data["status"] = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
@@ -182,6 +241,12 @@ void NetworkAccessManager::handleFinished(QNetworkReply *reply)
 
     m_ids.remove(reply);
     m_started.remove(reply);
+
+    if(reply->error() == QNetworkReply::NoError && !reply->header(QNetworkRequest::ContentTypeHeader).isValid()) {
+        std::cerr << "WARNING: Missing content-type header from reply: ["<< qPrintable(data["status"].toString()) <<
+         "] [" << qPrintable(data["statusText"].toString()) << "] from " << qPrintable(data["url"].toString()) <<
+         std::endl;
+    }
 
     emit resourceReceived(data);
 }

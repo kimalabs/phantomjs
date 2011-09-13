@@ -37,12 +37,14 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
+#include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QNetworkAccessManager>
 #include <QPainter>
 #include <QPrinter>
 #include <QWebElement>
 #include <QWebFrame>
+#include <QWebInspector>
 #include <QWebPage>
 #include <QMouseEvent>
 
@@ -60,9 +62,12 @@ public:
         : QWebPage(parent)
         , m_webPage(parent)
     {
-        m_userAgent = QWebPage::userAgentForUrl(QUrl());
+        m_userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_1) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/14.0.835.159 Safari/535.1";
         setForwardUnsupportedContent(true);
+        connect(this, SIGNAL(unsupportedContent(QNetworkReply*)),
+                this, SLOT(handleUnsupportedContent(QNetworkReply*)));
     }
+
 
 public slots:
     bool shouldInterruptJavaScript() {
@@ -70,7 +75,54 @@ public slots:
         return false;
     }
 
+    void handleUnsupportedContent(QNetworkReply *reply)
+    {
+        QString errorString = reply->errorString();
+
+        if (m_webPage->currentUrl() != reply->url()) {
+            // sub resource of this page
+            std::cerr << "Resource" << qPrintable(reply->url().toString()) << "has unknown Content-Type, will be ignored." << std::endl;
+            reply->deleteLater();
+            return;
+        }
+
+        if (reply->error() == QNetworkReply::NoError && !reply->header(QNetworkRequest::ContentTypeHeader).isValid()) {
+            std::cerr << "handleUnsupportedContent: Unknown Content-Type" << std::endl;
+        }
+    }
+
+
 protected:
+    bool supportsExtension(Extension extension) const {
+        if (extension == QWebPage::ErrorPageExtension)
+        {
+            return true;
+        }
+        return false;
+    }
+
+    bool extension(Extension extension, const ExtensionOption *option = 0, ExtensionReturn *output = 0)
+    {
+        if (extension != QWebPage::ErrorPageExtension)
+            return false;
+
+        ErrorPageExtensionOption *errorOption = (ErrorPageExtensionOption*) option;
+        std::cerr << "Error loading " << qPrintable(errorOption->url.toString())  << std::endl;
+        if(errorOption->domain == QWebPage::QtNetwork)
+            std::cerr << "Network error (" << errorOption->error << "): ";
+        else if(errorOption->domain == QWebPage::Http)
+            std::cerr << "HTTP error (" << errorOption->error << "): ";
+        else if(errorOption->domain == QWebPage::WebKit)
+            std::cerr << "WebKit error (" << errorOption->error << "): ";
+
+        std::cerr << qPrintable(errorOption->errorString) << std::endl;
+
+        return false;
+
+    }
+
+
+
     bool acceptNavigationRequest (QWebFrame * frame, const QNetworkRequest & request, NavigationType type ) {
         return m_webPage->acceptNavigationRequest(frame, request, type);
     }
@@ -109,14 +161,22 @@ WebPage::WebPage(QObject *parent)
     m_webPage = new CustomPage(this);
     m_mainFrame = m_webPage->mainFrame();
 
+    // Uncomment the below to enbable the Web Inspector
+    //QWebInspector *inspector = new QWebInspector;
+    //m_webPage->settings()->setAttribute(QWebSettings::DeveloperExtrasEnabled, true);
+
+    inspector->setPage(m_webPage);
+    inspector->setVisible(true);
+
+
     connect(m_mainFrame, SIGNAL(javaScriptWindowObjectCleared()), SIGNAL(initialized()));
     connect(m_webPage, SIGNAL(loadStarted()), SIGNAL(loadStarted()));
     connect(m_webPage, SIGNAL(loadFinished(bool)), SLOT(finish(bool)));
 
     // Start with transparent background.
-    QPalette palette = m_webPage->palette();
-    palette.setBrush(QPalette::Base, Qt::transparent);
-    m_webPage->setPalette(palette);
+    //QPalette palette = m_webPage->palette();
+    //palette.setBrush(QPalette::Base, Qt::transparent);
+    //m_webPage->setPalette(palette);
 
     // Page size does not need to take scrollbars into account.
     m_mainFrame->setScrollBarPolicy(Qt::Horizontal, Qt::ScrollBarAlwaysOff);
@@ -125,8 +185,9 @@ WebPage::WebPage(QObject *parent)
     m_webPage->settings()->setAttribute(QWebSettings::OfflineStorageDatabaseEnabled, true);
     m_webPage->settings()->setOfflineStoragePath(QDesktopServices::storageLocation(QDesktopServices::DataLocation));
 
-    m_webPage->settings()->setAttribute(QWebSettings::OfflineWebApplicationCacheEnabled, true);
-    m_webPage->settings()->setOfflineWebApplicationCachePath(QDesktopServices::storageLocation(QDesktopServices::DataLocation));
+    // Disabled offline cache to fix some issue with QTWebKit 2.2 [blake]
+    m_webPage->settings()->setAttribute(QWebSettings::OfflineWebApplicationCacheEnabled, false);
+    // m_webPage->settings()->setAttribute(QWebSettings::OfflineWebApplicationCacheEnabled, true);
 
 #if QT_VERSION >= QT_VERSION_CHECK(4, 7, 0)
     m_webPage->settings()->setAttribute(QWebSettings::FrameFlatteningEnabled, true);
@@ -594,6 +655,11 @@ void WebPage::mouseMoveTo(int x, int y)
     QMouseEvent* event = new QMouseEvent(QEvent::MouseMove, m_mousePos, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
     QApplication::postEvent(m_webPage, event);
     QApplication::processEvents();
+}
+
+QUrl WebPage::currentUrl() const
+{
+    return m_mainFrame->url();
 }
 
 #include "webpage.moc"

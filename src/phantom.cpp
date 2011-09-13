@@ -35,6 +35,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
+#include <QWebInspector>
 
 #include "consts.h"
 #include "terminal.h"
@@ -222,3 +223,21 @@ void Phantom::printConsoleMessage(const QString &message, int lineNumber, const 
     Terminal::instance()->cout(msg);
     Terminal::instance()->cerr(msg);
 }
+
+QVariantList Phantom::blockedUrls() const
+{
+    return m_netAccessMan->blockedUrls();
+}
+
+void Phantom::setBlockedUrls(const QVariantList &urls)
+{
+    m_netAccessMan->setBlockedUrls(urls);
+    m_page->setBlockedUrls(urls);
+    QList<QPointer<WebPage> > ::Iterator it = m_pages.begin();
+
+    while(it != m_pages.end()) {
+        (*it++)->setBlockedUrls(urls);
+    }
+
+}
+

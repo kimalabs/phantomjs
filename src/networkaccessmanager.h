@@ -46,8 +46,12 @@ public:
     NetworkAccessManager(QObject *parent = 0, bool diskCacheEnabled = false, QString cookieFile = "", bool ignoreSslErrors = false);
     virtual ~NetworkAccessManager();
 
+    void setBlockedUrls(const QVariantList &urls);
+    QVariantList blockedUrls() const;
+
 protected:
     bool m_ignoreSslErrors;
+    bool shouldLoadUrl(const QString & url);
     QNetworkReply *createRequest(Operation op, const QNetworkRequest & req, QIODevice * outgoingData = 0);
 
 signals:
@@ -62,6 +66,7 @@ private:
     QHash<QNetworkReply*, int> m_ids;
     QSet<QNetworkReply*> m_started;
     int m_idCounter;
+    QVariantList m_blockedUrls;
 };
 
 #endif // NETWORKACCESSMANAGER_H
