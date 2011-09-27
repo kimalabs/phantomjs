@@ -32,9 +32,11 @@
 #define NETWORKACCESSMANAGER_H
 
 #include <QHash>
+#include <QList>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QSet>
+#include <QSslError>
 
 class QNetworkDiskCache;
 
@@ -61,6 +63,7 @@ signals:
 private slots:
     void handleStarted();
     void handleFinished(QNetworkReply *reply);
+    void sslErrors(const QList<QSslError> & errors);
 
 private:
     QHash<QNetworkReply*, int> m_ids;

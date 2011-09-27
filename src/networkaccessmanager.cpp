@@ -177,6 +177,7 @@ QNetworkReply *NetworkAccessManager::createRequest(Operation op, const QNetworkR
     data["time"] = QDateTime::currentDateTime();
 
     connect(reply, SIGNAL(readyRead()), this, SLOT(handleStarted()));
+    connect(reply, SIGNAL(sslErrors(const QList<QSslError> &)), this, SLOT(sslErrors(const QList<QSslError> &)));
 
     emit resourceRequested(data);
     return new NetworkReplyProxy(this, reply);
@@ -249,4 +250,10 @@ void NetworkAccessManager::handleFinished(QNetworkReply *reply)
     }
 
     emit resourceReceived(data);
+}
+
+void NetworkAccessManager::sslErrors(const QList<QSslError> & errors) {
+  foreach (QSslError error, errors) {
+    std::cerr << "SSL Error: " << qPrintable(error.errorString()) << std::endl;
+  }
 }
