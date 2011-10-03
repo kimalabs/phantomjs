@@ -19,38 +19,37 @@
 
 import os
 import sys
-import codecs
 
 import sip
-from PyQt4.QtCore import (pyqtProperty, pyqtSlot, QObject,
-                          QFile)
+from PyQt4.QtCore import pyqtProperty, pyqtSlot, QObject
 from PyQt4.QtGui import QApplication
 from PyQt4.QtNetwork import QNetworkProxy, QNetworkProxyFactory
 
-from utils import (version_major, version_minor, version_patch,
-                   injectJsInFrame)
-from plugincontroller import do_action
-from webpage import WebPage
-from networkaccessmanager import NetworkAccessManager
+from __init__ import __version_info__
+from encoding import Encode
 from filesystem import FileSystem
+from plugincontroller import do_action
+from utils import injectJsInFrame, QPyFile
+from webpage import WebPage
 
 
 class Phantom(QObject):
     def __init__(self, parent, args):
-        QObject.__init__(self, parent)
+        super(Phantom, self).__init__(parent)
 
         # variable declarations
         self.m_defaultPageSettings = {}
         self.m_pages = []
         self.m_verbose = args.verbose
-        self.m_page = WebPage(self)
+        self.m_page = WebPage(self, args)
         self.m_returnValue = 0
         self.m_terminated = False
         # setup the values from args
+        self.app_args = args
         self.m_scriptFile = args.script
         self.m_args = args.script_args
-
-        self.m_filesystem = FileSystem(self)
+        self.m_scriptEncoding = Encode(args.script_encoding, 'utf-8')
+        self.m_outputEncoding = Encode(args.output_encoding, sys.stdout.encoding_sys)
 
         self.m_pages.append(self.m_page)
 
@@ -62,10 +61,6 @@ class Phantom(QObject):
             proxy = QNetworkProxy(QNetworkProxy.HttpProxy, args.proxy[0], int(args.proxy[1]))
             QNetworkProxy.setApplicationProxy(proxy)
 
-        # Provide WebPage with a non-standard Network Access Manager
-        self.m_netAccessMan = NetworkAccessManager(self, args.disk_cache, args.cookies, args.ignore_ssl_errors)
-        self.m_page.setNetworkAccessManager(self.m_netAccessMan)
-
         self.m_page.javaScriptConsoleMessageSent.connect(self.printConsoleMessage)
 
         self.m_defaultPageSettings['loadImages'] = args.load_images
@@ -73,28 +68,22 @@ class Phantom(QObject):
         self.m_defaultPageSettings['javascriptEnabled'] = True
         self.m_defaultPageSettings['XSSAuditingEnabled'] = False
         self.m_defaultPageSettings['userAgent'] = self.m_page.userAgent()
-        self.m_defaultPageSettings['localAccessRemote'] = args.local_access_remote
+        self.m_defaultPageSettings['localToRemoteUrlAccessEnabled'] = args.local_to_remote_url_access
         self.m_page.applySettings(self.m_defaultPageSettings)
 
         self.libraryPath = os.path.dirname(os.path.abspath(self.m_scriptFile))
 
         # inject our properties and slots into javascript
         self.m_page.mainFrame().addToJavaScriptWindowObject('phantom', self)
-        self.m_page.mainFrame().addToJavaScriptWindowObject('fs', self.m_filesystem)
 
-        bootstrap = QFile(':/bootstrap.js')
-        if not bootstrap.open(QFile.ReadOnly):
-            sys.exit('Can not bootstrap!')
-        bootstrapper = str(bootstrap.readAll())
-        bootstrap.close()
-        if not bootstrapper:
-            sys.exit('Can not bootstrap!')
-        self.m_page.mainFrame().evaluateJavaScript(bootstrapper)
+        with QPyFile(':/bootstrap.js') as f:
+            bootstrap = f.readAll()
+        self.m_page.mainFrame().evaluateJavaScript(bootstrap)
 
         do_action('PhantomInitPost')
 
     def execute(self):
-        injectJsInFrame(self.m_scriptFile, os.path.dirname(os.path.abspath(__file__)), self.m_page.mainFrame(), True)
+        injectJsInFrame(self.m_scriptFile, self.m_scriptEncoding.encoding, os.path.dirname(os.path.abspath(__file__)), self.m_page.mainFrame(), True)
         return not self.m_terminated
 
     def printConsoleMessage(self, message, lineNumber, source):
@@ -113,12 +102,15 @@ class Phantom(QObject):
     def args(self):
         return self.m_args
 
+    @pyqtSlot(result=FileSystem)
+    def createFilesystem(self):
+        return FileSystem(self)
+
     @pyqtSlot(result=WebPage)
     def createWebPage(self):
-        page = WebPage(self)
+        page = WebPage(self, self.app_args)
         self.m_pages.append(page)
         page.applySettings(self.m_defaultPageSettings)
-        page.setNetworkAccessManager(self.m_netAccessMan)
         page.libraryPath = os.path.dirname(os.path.abspath(self.m_scriptFile))
         return page
 
@@ -144,7 +136,16 @@ class Phantom(QObject):
 
     @pyqtSlot(str, result=bool)
     def injectJs(self, filePath):
-        return injectJsInFrame(filePath, self.libraryPath, self.m_page.mainFrame())
+        return injectJsInFrame(filePath, self.m_scriptEncoding.encoding, self.libraryPath, self.m_page.mainFrame())
+
+    @pyqtSlot(str, result=str)
+    def loadModuleSource(self, name):
+        moduleSourceFilePath = ':/modules/%s.js' % name
+
+        with QPyFile(moduleSourceFilePath) as f:
+            moduleSource = f.readAll()
+
+        return moduleSource
 
     @pyqtProperty(str)
     def libraryPath(self):
@@ -156,27 +157,16 @@ class Phantom(QObject):
 
     @pyqtProperty(str)
     def outputEncoding(self):
-        if sys.stdout.encoding.lower() == 'system':
-            return sys.stdout.encoding.lower()
-        return codecs.lookup(sys.stdout.encoding).name
+        return self.m_outputEncoding.name
 
     @outputEncoding.setter
     def outputEncoding(self, encoding):
-        encode_to = encoding
-        if encoding.lower() == 'system':
-            encode_to = sys.stdout.encoding_sys
+        self.m_outputEncoding = Encode(encoding, self.m_outputEncoding.encoding)
 
-        if encoding.lower() != 'system':
-            # ignore encoding if the encoder is invalid
-            try:
-                codecs.lookup(encoding)
-            except LookupError:
-                return
-
-        sys.stdout.encoding = encoding
-        sys.stdout.encode_to = encode_to
-        sys.stderr.encoding = encoding
-        sys.stdout.encode_to = encode_to
+        sys.stdout.encoding = self.m_outputEncoding.encoding
+        sys.stdout.encode_to = self.m_outputEncoding.encoding
+        sys.stderr.encoding = self.m_outputEncoding.encoding
+        sys.stdout.encode_to = self.m_outputEncoding.encoding
 
     @pyqtProperty(str)
     def scriptName(self):
@@ -185,9 +175,9 @@ class Phantom(QObject):
     @pyqtProperty('QVariantMap')
     def version(self):
         version = {
-            'major': version_major,
-            'minor': version_minor,
-            'patch': version_patch
+            'major': __version_info__[0],
+            'minor': __version_info__[1],
+            'patch': __version_info__[2]
         }
         return version
 

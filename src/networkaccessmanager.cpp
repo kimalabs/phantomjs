@@ -28,19 +28,20 @@
   THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <QAuthenticator>
 #include <QDateTime>
-#include <QList>
 #include <QDesktopServices>
-#include <QNetworkRequest>
-#include <QNetworkReply>
 #include <QNetworkDiskCache>
 #include <QRegExp>
 
 #include <iostream>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 
-#include "networkaccessmanager.h"
-#include "networkreplyproxy.h"
+
+#include "config.h"
 #include "cookiejar.h"
+#include "networkaccessmanager.h"
 
 static const char *toString(QNetworkAccessManager::Operation op)
 {
@@ -69,28 +70,36 @@ static const char *toString(QNetworkAccessManager::Operation op)
 }
 
 // public:
-NetworkAccessManager::NetworkAccessManager(QObject *parent, bool diskCacheEnabled, QString cookieFile, bool ignoreSslErrors)
+NetworkAccessManager::NetworkAccessManager(QObject *parent, const Config *config)
     : QNetworkAccessManager(parent)
-    , m_networkDiskCache(0)
-    , m_ignoreSslErrors(ignoreSslErrors)
+    , m_ignoreSslErrors(config->ignoreSslErrors())
     , m_idCounter(0)
+    , m_networkDiskCache(0)
 {
-    if (!cookieFile.isEmpty()) {
-        setCookieJar(new CookieJar(cookieFile));
+    if (!config->cookiesFile().isEmpty()) {
+        setCookieJar(new CookieJar(config->cookiesFile()));
     }
 
-    if (diskCacheEnabled) {
-        m_networkDiskCache = new QNetworkDiskCache();
+    if (config->diskCacheEnabled()) {
+        m_networkDiskCache = new QNetworkDiskCache(this);
         m_networkDiskCache->setCacheDirectory(QDesktopServices::storageLocation(QDesktopServices::CacheLocation));
+        if (config->maxDiskCacheSize() >= 0)
+            m_networkDiskCache->setMaximumCacheSize(config->maxDiskCacheSize() * 1024);
         setCache(m_networkDiskCache);
     }
+
+    connect(this, SIGNAL(authenticationRequired(QNetworkReply*,QAuthenticator*)), SLOT(provideAuthentication(QNetworkReply*,QAuthenticator*)));
     connect(this, SIGNAL(finished(QNetworkReply*)), SLOT(handleFinished(QNetworkReply*)));
 }
 
-NetworkAccessManager::~NetworkAccessManager()
+void NetworkAccessManager::setUserName(const QString &userName)
 {
-    if (m_networkDiskCache)
-        delete m_networkDiskCache;
+    m_userName = userName;
+}
+
+void NetworkAccessManager::setPassword(const QString &password)
+{
+    m_password = password;
 }
 
 QVariantList NetworkAccessManager::blockedUrls() const
@@ -180,7 +189,7 @@ QNetworkReply *NetworkAccessManager::createRequest(Operation op, const QNetworkR
     connect(reply, SIGNAL(sslErrors(const QList<QSslError> &)), this, SLOT(sslErrors(const QList<QSslError> &)));
 
     emit resourceRequested(data);
-    return new NetworkReplyProxy(this, reply);
+    return reply;
 }
 
 void NetworkAccessManager::handleStarted()
@@ -237,9 +246,6 @@ void NetworkAccessManager::handleFinished(QNetworkReply *reply)
     data["headers"] = headers;
     data["time"] = QDateTime::currentDateTime();
 
-    NetworkReplyProxy *nrp = qobject_cast<NetworkReplyProxy*>(reply);
-    data["text"] = nrp->body();
-
     m_ids.remove(reply);
     m_started.remove(reply);
 
@@ -256,4 +262,11 @@ void NetworkAccessManager::sslErrors(const QList<QSslError> & errors) {
   foreach (QSslError error, errors) {
     std::cerr << "SSL Error: " << qPrintable(error.errorString()) << std::endl;
   }
+}
+
+void NetworkAccessManager::provideAuthentication(QNetworkReply *reply, QAuthenticator *authenticator)
+{
+    Q_UNUSED(reply);
+    authenticator->setUser(m_userName);
+    authenticator->setPassword(m_password);
 }

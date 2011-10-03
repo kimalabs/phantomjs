@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 '''
   This file is part of the PyPhantomJS project.
 
@@ -18,13 +17,19 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 '''
 
-from runpy import run_module
+import codecs
 
-# automatically convert Qt types by using api 2
-import sip
-for item in ('QDate', 'QDateTime', 'QString', 'QTextStream', 'QTime'
-             'QUrl', 'QVariant'):
-    sip.setapi(item, 2)
 
-if __name__ == '__main__':
-    run_module('pyphantomjs.pyphantomjs', run_name='__main__')
+class Encode(object):
+    def __init__(self, encoding, default):
+        # check that encoding is valid
+        try:
+            codecs.lookup(encoding)
+            self.encoding = encoding
+        except LookupError:
+            # fall back to default encoding
+            self.encoding = default
+
+    @property
+    def name(self):
+        return codecs.lookup(self.encoding).name

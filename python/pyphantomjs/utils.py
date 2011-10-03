@@ -17,21 +17,18 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 '''
 
+import argparse
+import codecs
 import os
 import sys
-import codecs
-import argparse
 
-from PyQt4.QtCore import (QDateTime, Qt, QtDebugMsg, QtWarningMsg,
-                          QtCriticalMsg, QtFatalMsg, qDebug)
+from PyQt4.QtCore import (QByteArray, QDateTime, qDebug, QFile, Qt,
+                          QtCriticalMsg, QtDebugMsg, QtFatalMsg,
+                          QtWarningMsg)
 
-from csconverter import CSConverter
+from __init__ import __version__
 from plugincontroller import do_action
 
-
-version_major, version_minor, version_patch = (1, 3, 0)
-version = '%d.%d.%d' % (version_major, version_minor, version_patch)
-is_stable = False
 
 license = '''
   PyPhantomJS Version %s
@@ -50,10 +47,16 @@ license = '''
 
   You should have received a copy of the GNU General Public License
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
-''' % (version if is_stable else version + ' (development)')
+''' % __version__
 
 
 def argParser():
+    class YesOrNoAction(argparse.Action):
+        '''Converts yes or no arguments to True/False respectively'''
+        def __call__(self, parser, namespace, value, option_string=None):
+            answer = False if value == 'no' else True
+            setattr(namespace, self.dest, answer)
+
     parser = argparse.ArgumentParser(
         description='Minimalistic headless WebKit-based JavaScript-driven tool',
         usage='%(prog)s [options] script.[js|coffee] [script argument [script argument ...]]',
@@ -63,39 +66,62 @@ def argParser():
     parser.add_argument('script', metavar='script.[js|coffee]', nargs='?',
         help='The script to execute, and any args to pass to it'
     )
-
-    parser.add_argument('--disk-cache', default='no',
-        choices=['yes', 'no'],
-        help='Enable disk cache (default: %(default)s)'
-    )
-    parser.add_argument('--cookies', metavar='CookieJar',
-        help='Use persistent cookies from a CookieJar INI file'
-    )
-    parser.add_argument('--ignore-ssl-errors', default='no',
-        choices=['yes', 'no'],
-        help='Ignore SSL errors (default: %(default)s)'
-    )
-    parser.add_argument('--load-images', default='yes',
-        choices=['yes', 'no'],
-        help='Load all inlined images (default: %(default)s)'
-    )
-    parser.add_argument('--load-plugins', default='no',
-        choices=['yes', 'no'],
-        help='Load all plugins (i.e. Flash, Silverlight, ...) (default: %(default)s)'
-    )
-    parser.add_argument('--local-access-remote', default='no',
-        choices=['yes', 'no'],
-        help='Local content can access remote URL (default: %(default)s)'
-    )
-    parser.add_argument('--proxy', metavar='address:port',
-        help='Set the network proxy'
-    )
-    parser.add_argument('-v', '--verbose', action='store_true',
-        help='Show verbose debug messages'
-    )
-    parser.add_argument('--version',
+    parser.add_argument('-v', '--version',
         action='version', version=license,
         help="show this program's version and license"
+    )
+
+    program = parser.add_argument_group('program options')
+    script = parser.add_argument_group('script options')
+    debug = parser.add_argument_group('debug options')
+
+    program.add_argument('--config', metavar='/path/to/config',
+        help='Specifies path to a JSON-formatted config file'
+    )
+    program.add_argument('--disk-cache', default=False, action=YesOrNoAction,
+        choices=['yes', 'no'],
+        help='Enable disk cache (default: no)'
+    )
+    program.add_argument('--ignore-ssl-errors', default=False, action=YesOrNoAction,
+        choices=['yes', 'no'],
+        help='Ignore SSL errors (default: no)'
+    )
+    program.add_argument('--max-disk-cache-size', default=-1, metavar='size', type=int,
+        help='Limits the size of disk cache (in KB)'
+    )
+    program.add_argument('--output-encoding', default='System', metavar='encoding',
+        help='Sets the encoding used for terminal output (default: %(default)s)'
+    )
+    program.add_argument('--proxy', metavar='address:port',
+        help='Set the network proxy'
+    )
+    program.add_argument('--script-encoding', default='utf-8', metavar='encoding',
+        help='Sets the encoding used for scripts (default: %(default)s)'
+    )
+
+    script.add_argument('--cookies-file', metavar='/path/to/cookies.txt',
+        help='Sets the file name to store the persistent cookies'
+    )
+    script.add_argument('--load-images', default=True, action=YesOrNoAction,
+        choices=['yes', 'no'],
+        help='Load all inlined images (default: yes)'
+    )
+    script.add_argument('--load-plugins', default=False, action=YesOrNoAction,
+        choices=['yes', 'no'],
+        help='Load all plugins (i.e. Flash, Silverlight, ...) (default: no)'
+    )
+    script.add_argument('--local-to-remote-url-access', default=False, action=YesOrNoAction,
+        choices=['yes', 'no'],
+        help='Local content can access remote URL (default: no)'
+    )
+
+    debug.add_argument('--debug', choices=['exception', 'program'], metavar='option',
+        help=('Debug the program with pdb\n'
+              '    exception : Start debugger when program hits exception\n'
+              '    program   : Start the program with the debugger enabled')
+    )
+    debug.add_argument('--verbose', action='store_true',
+        help='Show verbose debug messages'
     )
 
     do_action('ArgParser')
@@ -103,25 +129,32 @@ def argParser():
     return parser
 
 
+CSConverter = None
 def coffee2js(script):
+    global CSConverter
+    if not CSConverter:
+        from csconverter import CSConverter
     return CSConverter().convert(script)
 
 
-def injectJsInFrame(filePath, libraryPath, targetFrame, startingScript=False):
+def injectJsInFrame(filePath, scriptEncoding, libraryPath, targetFrame, startingScript=False):
     try:
         # if file doesn't exist in the CWD, use the lookup
         if not os.path.exists(filePath):
             filePath = os.path.join(libraryPath, filePath)
 
-        with codecs.open(filePath, encoding='utf-8') as f:
-            script = f.read()
+        try:
+            with codecs.open(filePath, encoding=scriptEncoding) as f:
+                script = f.read()
+        except UnicodeDecodeError as e:
+            sys.exit("%s in '%s'" % (e, filePath))
 
         if script.startswith('#!') and not filePath.lower().endswith('.coffee'):
             script = '//' + script
 
         if filePath.lower().endswith('.coffee'):
             result = coffee2js(script)
-            if result[0] is False:
+            if not result[0]:
                 if startingScript:
                     sys.exit("%s: '%s'" % (result[1], filePath))
                 else:
@@ -171,3 +204,45 @@ class SafeStreamFilter(object):
 
     def encode(self, s):
         return s.encode(self.encode_to, self.errors)
+
+
+class QPyFile(QFile):
+    '''Simple subclass of QFile which supports the context manager
+
+       It also wraps methods that require/return some foreign data type,
+       such as QByteArray.
+    '''
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+    def __init__(self, filename, mode='r'):
+        super(QPyFile, self).__init__(filename)
+
+        modeMap = {
+            'r': QFile.ReadOnly,
+            'r+': QFile.ReadOnly | QFile.WriteOnly,
+            'w': QFile.WriteOnly | QFile.Truncate,
+            'w+': QFile.WriteOnly | QFile.ReadOnly | QFile.Truncate,
+            'a': QFile.Append,
+            'a+': QFile.Append | QFile.ReadOnly
+        }
+
+        flags = QFile.NotOpen
+        for key, flag in modeMap.items():
+            if key in mode:
+                flags = flags | flag
+
+        if not self.open(flags):
+            raise IOError("Could not open file: '%s'" % self.fileName())
+
+    def peek(self, maxlen):
+        return str(super(QPyFile, self).peek(maxlen))
+
+    def readAll(self):
+        return str(super(QPyFile, self).readAll())
+
+    def write(self, data):
+        return super(QPyFile, self).write(QByteArray(data))

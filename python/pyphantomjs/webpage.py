@@ -20,27 +20,25 @@
 from math import ceil, floor
 
 import sip
-from PyQt4.QtCore import (pyqtProperty, pyqtSlot, pyqtSignal, Qt, QObject,
-                          QRect, QPoint, QUrl, QFileInfo, QDir, QSize,
-                          QSizeF, QByteArray, QEventLoop, QEvent, QFile)
-from PyQt4.QtGui import (QPalette, QDesktopServices, QPrinter, QImage,
-                         QPainter, QRegion, QApplication, QMouseEvent,
-                         qRgba)
-from PyQt4.QtWebKit import QWebSettings, QWebPage
+from PyQt4.QtCore import (pyqtProperty, pyqtSignal, pyqtSlot, QByteArray,
+                          QDir, QEvent, QEventLoop, QFileInfo, QObject,
+                          QPoint, QRect, QSize, QSizeF, Qt, QUrl)
+from PyQt4.QtGui import (QApplication, QDesktopServices, QImage,
+                         QMouseEvent, QPainter, QPalette, QPrinter,
+                         QRegion, qRgba)
 from PyQt4.QtNetwork import QNetworkAccessManager, QNetworkRequest
+from PyQt4.QtWebKit import QWebPage, QWebSettings
 
+from networkaccessmanager import NetworkAccessManager
 from plugincontroller import do_action
 from utils import injectJsInFrame
 
 
 class CustomPage(QWebPage):
     def __init__(self, parent):
-        QWebPage.__init__(self, parent)
-
-        self.m_parent = parent
+        super(CustomPage, self).__init__(parent)
 
         self.m_userAgent = QWebPage.userAgentForUrl(self, QUrl())
-        self.m_scrollPosition = QPoint()
 
         self.m_uploadFile = ''
 
@@ -54,10 +52,10 @@ class CustomPage(QWebPage):
         return False
 
     def javaScriptAlert(self, originatingFrame, msg):
-        self.m_parent.javaScriptAlertSent.emit(msg)
+        self.parent().javaScriptAlertSent.emit(msg)
 
     def javaScriptConsoleMessage(self, message, lineNumber, sourceID):
-        self.m_parent.javaScriptConsoleMessageSent.emit(message, lineNumber, sourceID)
+        self.parent().javaScriptConsoleMessageSent.emit(message, lineNumber, sourceID)
 
     def userAgentForUrl(self, url):
         return self.m_userAgent
@@ -74,16 +72,16 @@ class WebPage(QObject):
     resourceReceived = pyqtSignal('QVariantMap')
     resourceRequested = pyqtSignal('QVariantMap')
 
-    def __init__(self, parent):
-        QObject.__init__(self, parent)
+    blankHtml = '<html><head></head><body></body></html>'
 
-        self.m_parent = parent
+    def __init__(self, parent, args):
+        super(WebPage, self).__init__(parent)
 
         # variable declarations
         self.m_paperSize = {}
         self.m_clipRect = QRect()
         self.m_libraryPath = ''
-        self.m_mousePos = QPoint()
+        self.m_scrollPosition = QPoint()
 
         self.setObjectName('WebPage')
         self.m_webPage = CustomPage(self)
@@ -112,7 +110,13 @@ class WebPage(QObject):
         self.m_webPage.settings().setLocalStoragePath(QDesktopServices.storageLocation(QDesktopServices.DataLocation))
 
         # Ensure we have a document.body.
-        self.m_webPage.mainFrame().setHtml('<html><body></body></html>')
+        self.m_webPage.mainFrame().setHtml(self.blankHtml)
+
+        # Custom network access manager to allow traffic monitoring
+        self.m_networkAccessManager = NetworkAccessManager(self.parent(), args)
+        self.m_webPage.setNetworkAccessManager(self.m_networkAccessManager)
+        self.m_networkAccessManager.resourceRequested.connect(self.resourceRequested)
+        self.m_networkAccessManager.resourceReceived.connect(self.resourceReceived)
 
         self.m_webPage.setViewportSize(QSize(400, 300))
 
@@ -125,9 +129,16 @@ class WebPage(QObject):
         opt.setAttribute(QWebSettings.PluginsEnabled, defaults['loadPlugins'])
         opt.setAttribute(QWebSettings.JavascriptEnabled, defaults['javascriptEnabled'])
         opt.setAttribute(QWebSettings.XSSAuditingEnabled, defaults['XSSAuditingEnabled'])
-        opt.setAttribute(QWebSettings.LocalContentCanAccessRemoteUrls, defaults['localAccessRemote'])
+        opt.setAttribute(QWebSettings.LocalContentCanAccessRemoteUrls, defaults['localToRemoteUrlAccessEnabled'])
+
         if 'userAgent' in defaults:
             self.m_webPage.m_userAgent = defaults['userAgent']
+
+        if 'userName' in defaults:
+            self.m_networkAccessManager.m_userName = defaults['userName']
+
+        if 'password' in defaults:
+            self.m_networkAccessManager.m_password = defaults['password']
 
     def finish(self, ok):
         status = 'success' if ok else 'fail'
@@ -137,15 +148,14 @@ class WebPage(QObject):
         return self.m_mainFrame
 
     def renderImage(self):
-        viewportSize = self.m_webPage.viewportSize()
-        frameRect = QRect(QPoint(0, 0), viewportSize)
+        contentsSize = self.m_mainFrame.contentsSize()
+        contentsSize -= QSize(self.m_scrollPosition.x(), self.m_scrollPosition.y())
+        frameRect = QRect(QPoint(0, 0), contentsSize)
         if not self.m_clipRect.isEmpty():
             frameRect = self.m_clipRect
 
-        if self.m_webPage.m_scrollPosition:
-            self.m_webPage.mainFrame().\
-                setScrollPosition(QPoint(self.m_webPage.m_scrollPosition.x(),
-                                         self.m_webPage.m_scrollPosition.y() ))
+        viewportSize = self.m_webPage.viewportSize()
+        self.m_webPage.setViewportSize(contentsSize)
 
         image = QImage(frameRect.size(), QImage.Format_ARGB32)
         image.fill(qRgba(255, 255, 255, 0))
@@ -254,11 +264,6 @@ class WebPage(QObject):
         self.m_webPage.mainFrame().print_(p)
         return True
 
-    def setNetworkAccessManager(self, networkAccessManager):
-        self.m_webPage.setNetworkAccessManager(networkAccessManager)
-        networkAccessManager.resourceRequested.connect(self.resourceRequested)
-        networkAccessManager.resourceReceived.connect(self.resourceReceived)
-
     def stringToPointSize(self, string):
         units = (
             ('mm', 72 / 25.4),
@@ -289,12 +294,6 @@ class WebPage(QObject):
             el.src = '%(scriptUrl)s';
             document.body.appendChild(el);
         ''' % {'scriptUrl': scriptUrl})
-
-    @pyqtSlot(int, int)
-    def click(self, x, y):
-        self.mouseMoveTo(x, y)
-        self.mouseDown()
-        self.mouseUp()
 
     @pyqtProperty('QVariantMap')
     def clipRect(self):
@@ -336,26 +335,7 @@ class WebPage(QObject):
 
     @pyqtSlot(str, result=bool)
     def injectJs(self, filePath):
-        return injectJsInFrame(filePath, self.m_libraryPath, self.m_mainFrame)
-
-    @pyqtSlot()
-    def mouseDown(self):
-        event = QMouseEvent(QEvent.MouseButtonPress, self.m_mousePos, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
-        QApplication.postEvent(self.m_webPage, event)
-        QApplication.processEvents()
-
-    @pyqtSlot()
-    def mouseUp(self):
-        event = QMouseEvent(QEvent.MouseButtonRelease, self.m_mousePos, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
-        QApplication.postEvent(self.m_webPage, event)
-        QApplication.processEvents()
-
-    @pyqtSlot(int, int)
-    def mouseMoveTo(self, x, y):
-        self.m_mousePos = QPoint(x, y)
-        event = QMouseEvent(QEvent.MouseMove, self.m_mousePos, Qt.NoButton, Qt.NoButton, Qt.NoModifier)
-        QApplication.postEvent(self.m_webPage, event)
-        QApplication.processEvents()
+        return injectJsInFrame(filePath, self.parent().m_scriptEncoding.encoding, self.m_libraryPath, self.m_mainFrame)
 
     @pyqtSlot(str, str, 'QVariantMap')
     @pyqtSlot(str, 'QVariantMap', 'QVariantMap')
@@ -390,7 +370,10 @@ class WebPage(QObject):
             self.m_mainFrame.evaluateJavaScript('console.error("Unknown network operation: %s");' % operation)
             return
 
-        self.m_mainFrame.load(QNetworkRequest(QUrl(address)), networkOp, body)
+        if address.lower() == 'about:blank':
+            self.m_mainFrame.setHtml(self.blankHtml)
+        else:
+            self.m_mainFrame.load(QNetworkRequest(QUrl(address)), networkOp, body)
 
     @pyqtProperty('QVariantMap')
     def paperSize(self):
@@ -402,7 +385,7 @@ class WebPage(QObject):
 
     @pyqtSlot()
     def release(self):
-        self.m_parent.m_pages.remove(self)
+        self.parent().m_pages.remove(self)
         sip.delete(self)
 
     @pyqtSlot(str, result=bool)
@@ -429,9 +412,38 @@ class WebPage(QObject):
     def libraryPath(self, dirPath):
         self.m_libraryPath = dirPath
 
+    @pyqtSlot(str, 'QVariant', 'QVariant')
+    def sendEvent(self, type_, arg1, arg2):
+        type_ = type_.lower()
+
+        if type_ in ('mousedown', 'mouseup', 'mousemove'):
+            eventType = QMouseEvent.Type(QEvent.None)
+            button = Qt.MouseButton(Qt.LeftButton)
+            buttons = Qt.MouseButtons(Qt.LeftButton)
+
+            if type_ == 'mousedown':
+                eventType = QEvent.MouseButtonPress
+            elif type_ == 'mouseup':
+                eventType = QEvent.MouseButtonRelease
+            elif type_ == 'mousemove':
+                eventType = QEvent.MouseMove
+                button = buttons = Qt.NoButton
+
+            assert eventType != QEvent.None
+
+            event = QMouseEvent(eventType, QPoint(arg1, arg2), button, buttons, Qt.NoModifier)
+            QApplication.postEvent(self.m_webPage, event)
+            QApplication.processEvents()
+
+            return
+
+        if type_ == 'click':
+            self.sendEvent('mousedown', arg1, arg2)
+            self.sendEvent('mouseup', arg1, arg2)
+
     @pyqtProperty('QVariantMap')
     def scrollPosition(self):
-        scroll = self.m_webPage.m_scrollPosition
+        scroll = self.m_scrollPosition
         result = {
             'left': scroll.x(),
             'top': scroll.y()
@@ -448,7 +460,8 @@ class WebPage(QObject):
                     positions[item] = 0
             except (KeyError, ValueError):
                 positions[item] = self.scrollPosition[item]
-        self.m_webPage.m_scrollPosition = QPoint(positions['left'], positions['top'])
+        self.m_scrollPosition = QPoint(positions['left'], positions['top'])
+        self.m_mainFrame.setScrollPosition(self.m_scrollPosition)
 
     @pyqtSlot(str, str)
     def uploadFile(self, selector, fileName):

@@ -17,25 +17,25 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 '''
 
-import os
 import codecs
+import os
 import shutil
 import stat
 try:
-    from pwd import getpwuid, getpwnam
     from grp import getgrgid, getgrnam
+    from pwd import getpwuid, getpwnam
 except ImportError:
     pass
 
-from PyQt4.QtCore import (pyqtSlot, pyqtProperty, QObject, QDateTime,
-                          QFileInfo, qDebug)
+from PyQt4.QtCore import (pyqtProperty, pyqtSlot, QDateTime, qDebug,
+                          QFileInfo, QObject)
 
 from plugincontroller import do_action
 
 
 class File(QObject):
     def __init__(self, parent, openfile):
-        QObject.__init__(self, parent)
+        super(File, self).__init__(parent)
 
         self.m_file = openfile
 
@@ -111,8 +111,14 @@ class File(QObject):
 
 
 class FileSystem(QObject):
+    _instance = None
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(FileSystem, cls).__new__(cls, *args, **kwargs)
+        return cls._instance
+
     def __init__(self, parent):
-        QObject.__init__(self, parent)
+        super(FileSystem, self).__init__(parent)
 
         do_action('FileSystemInit')
 
@@ -144,30 +150,12 @@ class FileSystem(QObject):
     ##
 
     @pyqtSlot(str, str, result=bool)
-    def copy(self, source, target):
+    def _copy(self, source, target):
         try:
             shutil.copy2(source, target)
             return True
         except IOError as (t, e):
             qDebug("FileSystem.copy - %s: '%s' -> '%s'" % (e, source, target))
-            return False
-
-    @pyqtSlot(str, str, result=bool)
-    def move(self, source, target):
-        try:
-            shutil.move(source, target)
-            return True
-        except IOError as (t, e):
-            qDebug("FileSystem.move - %s: '%s' -> '%s'" % (e, source, target))
-            return False
-
-    @pyqtSlot(str, result=bool)
-    def remove(self, path):
-        try:
-            os.remove(path)
-            return True
-        except OSError as e:
-            qDebug("FileSystem.remove - %s: '%s'" % (e, path))
             return False
 
     @pyqtSlot(str, str, result=bool)
@@ -179,27 +167,35 @@ class FileSystem(QObject):
             qDebug("FileSystem.rename - %s: '%s' -> '%s'" % (e, source, target))
             return False
 
-    @pyqtProperty(int)
-    def umask(self):
-        currentMask = os.umask(0)
-        os.umask(currentMask)
-        return currentMask
-
-    @umask.setter
-    def umask(self, mask):
-        os.umask(mask)
-
     ##
     # Directories
     ##
 
     @pyqtSlot(str, str, result=bool)
-    def copyTree(self, source, target):
+    def _copyTree(self, source, target):
         try:
             shutil.copytree(source, target)
             return True
         except IOError as (t, e):
             qDebug("FileSystem.copyTree - %s: '%s' -> '%s'" % (e, source, target))
+            return False
+
+    @pyqtSlot(str, result=bool)
+    def _removeDirectory(self, path):
+        try:
+            os.rmdir(path)
+            return True
+        except OSError as e:
+            qDebug("FileSystem.removeDirectory - %s: '%s'" % (e, path))
+            return False
+
+    @pyqtSlot(str, result=bool)
+    def _removeTree(self, path):
+        try:
+            shutil.rmtree(path)
+            return True
+        except OSError as e:
+            qDebug("FileSystem.removeTree - %s: '%s'" % (e, path))
             return False
 
     @pyqtSlot(str, str, result=bool)
@@ -229,24 +225,6 @@ class FileSystem(QObject):
             qDebug("FileSystem.makeTree - %s: '%s'" % (e, path))
             return False
 
-    @pyqtSlot(str, result=bool)
-    def removeDirectory(self, path):
-        try:
-            os.rmdir(path)
-            return True
-        except OSError as e:
-            qDebug("FileSystem.removeDirectory - %s: '%s'" % (e, path))
-            return False
-
-    @pyqtSlot(str, result=bool)
-    def removeTree(self, path):
-        try:
-            shutil.rmtree(path)
-            return True
-        except OSError as e:
-            qDebug("FileSystem.removeTree - %s: '%s'" % (e, path))
-            return False
-
     ##
     # Files
     ##
@@ -259,6 +237,15 @@ class FileSystem(QObject):
         except (IOError, ValueError) as (t, e):
             qDebug("FileSystem.open - %s: '%s'" % (e, path))
             return
+
+    @pyqtSlot(str, result=bool)
+    def _remove(self, path):
+        try:
+            os.remove(path)
+            return True
+        except OSError as e:
+            qDebug("FileSystem.remove - %s: '%s'" % (e, path))
+            return False
 
     @pyqtProperty(str)
     def newline(self):

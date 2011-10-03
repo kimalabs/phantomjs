@@ -32,10 +32,12 @@
 #define WEBPAGE_H
 
 #include <QMap>
-#include <QWebPage>
 #include <QVariantMap>
+#include <QWebPage>
 
+class Config;
 class CustomPage;
+class NetworkAccessManager;
 class Phantom;
 
 class WebPage: public QObject
@@ -50,10 +52,9 @@ class WebPage: public QObject
     Q_PROPERTY(QVariantList blockedUrls READ blockedUrls WRITE setBlockedUrls)
 
 public:
-    WebPage(QObject *parent = 0);
+    WebPage(QObject *parent, const Config *config);
 
     QWebFrame *mainFrame();
-    void setNetworkAccessManager(QNetworkAccessManager *networkAccessManager);
 
     QString content() const;
     void setContent(const QString &content);
@@ -89,10 +90,7 @@ public slots:
     bool injectJs(const QString &jsFilePath);
     void _appendScriptElement(const QString &scriptUrl);
     void uploadFile(const QString &selector, const QString &fileName);
-    void click( int x, int y );
-    void mouseDown();
-    void mouseUp();
-    void mouseMoveTo(int x, int y);
+    void sendEvent(const QString &type, const QVariant &arg1 = QVariant(), const QVariant &arg2 = QVariant());
 
 signals:
     void initialized();
@@ -108,6 +106,7 @@ private slots:
 
 private:
     CustomPage *m_webPage;
+    NetworkAccessManager *m_networkAccessManager;
     QWebFrame *m_mainFrame;
     QRect m_clipRect;
     QPoint m_scrollPosition;

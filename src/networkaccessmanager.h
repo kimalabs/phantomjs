@@ -31,6 +31,7 @@
 #ifndef NETWORKACCESSMANAGER_H
 #define NETWORKACCESSMANAGER_H
 
+#include <QAuthenticator>
 #include <QHash>
 #include <QList>
 #include <QNetworkAccessManager>
@@ -38,15 +39,16 @@
 #include <QSet>
 #include <QSslError>
 
+class Config;
 class QNetworkDiskCache;
 
 class NetworkAccessManager : public QNetworkAccessManager
 {
     Q_OBJECT
-    QNetworkDiskCache* m_networkDiskCache;
 public:
-    NetworkAccessManager(QObject *parent = 0, bool diskCacheEnabled = false, QString cookieFile = "", bool ignoreSslErrors = false);
-    virtual ~NetworkAccessManager();
+    NetworkAccessManager(QObject *parent, const Config *config);
+    void setUserName(const QString &userName);
+    void setPassword(const QString &password);
 
     void setBlockedUrls(const QVariantList &urls);
     QVariantList blockedUrls() const;
@@ -54,6 +56,9 @@ public:
 protected:
     bool m_ignoreSslErrors;
     bool shouldLoadUrl(const QString & url);
+    QString m_userName;
+    QString m_password;
+
     QNetworkReply *createRequest(Operation op, const QNetworkRequest & req, QIODevice * outgoingData = 0);
 
 signals:
@@ -64,12 +69,14 @@ private slots:
     void handleStarted();
     void handleFinished(QNetworkReply *reply);
     void sslErrors(const QList<QSslError> & errors);
+    void provideAuthentication(QNetworkReply *reply, QAuthenticator *authenticator);
 
 private:
     QHash<QNetworkReply*, int> m_ids;
     QSet<QNetworkReply*> m_started;
     int m_idCounter;
     QVariantList m_blockedUrls;
+    QNetworkDiskCache* m_networkDiskCache;
 };
 
 #endif // NETWORKACCESSMANAGER_H

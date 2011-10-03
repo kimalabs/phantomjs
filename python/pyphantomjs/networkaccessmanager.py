@@ -17,13 +17,12 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 '''
 
-from PyQt4.QtGui import QDesktopServices
 from PyQt4.QtCore import pyqtSignal, QDateTime
+from PyQt4.QtGui import QDesktopServices
 from PyQt4.QtNetwork import (QNetworkAccessManager, QNetworkDiskCache,
                              QNetworkRequest)
 
 from cookiejar import CookieJar
-from networkreplyproxy import NetworkReplyProxy
 from plugincontroller import do_action
 
 
@@ -31,30 +30,34 @@ class NetworkAccessManager(QNetworkAccessManager):
     resourceReceived = pyqtSignal('QVariantMap')
     resourceRequested = pyqtSignal('QVariantMap')
 
-    def __init__(self, parent, diskCacheEnabled, cookieFile, ignoreSslErrors):
-        QNetworkAccessManager.__init__(self, parent)
+    def __init__(self, parent, args):
+        super(NetworkAccessManager, self).__init__(parent)
 
-        self.m_ignoreSslErrors = ignoreSslErrors
+        self.m_userName = self.m_password = ''
+        self.m_ignoreSslErrors = args.ignore_ssl_errors
         self.m_idCounter = 0
         self.m_ids = {}
         self.m_started = []
 
-        self.finished.connect(self.handleFinished)
+        if args.cookies_file:
+            self.setCookieJar(CookieJar(self, args.cookies_file))
 
-        if diskCacheEnabled:
+        if args.disk_cache:
             m_networkDiskCache = QNetworkDiskCache()
             m_networkDiskCache.setCacheDirectory(QDesktopServices.storageLocation(QDesktopServices.CacheLocation))
+            if args.max_disk_cache_size > 0:
+                m_networkDiskCache.setMaximumCacheSize(args.max_disk_cache_size * 1024)
             self.setCache(m_networkDiskCache)
 
-        if cookieFile:
-            self.setCookieJar(CookieJar(self, cookieFile))
+        self.authenticationRequired.connect(self.provideAuthentication)
+        self.finished.connect(self.handleFinished)
 
         do_action('NetworkAccessManagerInit')
 
     def createRequest(self, op, req, outgoingData):
         do_action('NetworkAccessManagerCreateRequestPre')
 
-        reply = NetworkReplyProxy(self, QNetworkAccessManager.createRequest(self, op, req, outgoingData))
+        reply = QNetworkAccessManager.createRequest(self, op, req, outgoingData)
 
         if self.m_ignoreSslErrors:
             reply.ignoreSslErrors()
@@ -72,7 +75,7 @@ class NetworkAccessManager(QNetworkAccessManager):
 
         data = {
             'id': self.m_idCounter,
-            'url': str(req.url()),
+            'url': req.url().toString(),
             'method': self.operationToString(op),
             'headers': headers,
             'time': QDateTime.currentDateTime()
@@ -97,14 +100,13 @@ class NetworkAccessManager(QNetworkAccessManager):
         data = {
             'stage': 'end',
             'id': self.m_ids[reply],
-            'url': str(reply.url()),
+            'url': reply.url().toString(),
             'status': reply.attribute(QNetworkRequest.HttpStatusCodeAttribute),
             'statusText': reply.attribute(QNetworkRequest.HttpReasonPhraseAttribute),
             'contentType': reply.header(QNetworkRequest.ContentTypeHeader),
             'redirectURL': reply.header(QNetworkRequest.LocationHeader),
             'headers': headers,
-            'time': QDateTime.currentDateTime(),
-            'text': reply.body()
+            'time': QDateTime.currentDateTime()
         }
 
         del self.m_ids[reply]
@@ -135,7 +137,7 @@ class NetworkAccessManager(QNetworkAccessManager):
         data = {
             'stage': 'start',
             'id': self.m_ids[reply],
-            'url': str(reply.url()),
+            'url': reply.url().toString(),
             'status': reply.attribute(QNetworkRequest.HttpStatusCodeAttribute),
             'statusText': reply.attribute(QNetworkRequest.HttpReasonPhraseAttribute),
             'contentType': reply.header(QNetworkRequest.ContentTypeHeader),
@@ -164,5 +166,9 @@ class NetworkAccessManager(QNetworkAccessManager):
             verb = 'DELETE'
 
         return verb
+
+    def provideAuthentication(self, reply, authenticator):
+        authenticator.setUser(self.m_userName)
+        authenticator.setPassword(self.m_password)
 
     do_action('NetworkAccessManager')

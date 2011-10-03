@@ -1,7 +1,13 @@
+/*jslint sloppy: true, nomen: true */
+/*global window:true,phantom:true */
+
 /*
   This file is part of the PhantomJS project from Ofi Labs.
 
   Copyright (C) 2011 Ariya Hidayat <ariya.hidayat@gmail.com>
+  Copyright (C) 2011 Ivan De Marino <ivan.de.marino@gmail.com>
+  Copyright (C) 2011 James Roe <roejames12@hotmail.com>
+  Copyright (C) 2011 execjosh, http://execjosh.blogspot.com
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -27,42 +33,25 @@
   THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef NETWORKREPLYPROXY_H
-#define NETWORKREPLYPROXY_H
+function require(name) {
 
-#include <QNetworkReply>
+    var code, func, exports;
 
-class NetworkReplyProxy : public QNetworkReply {
-    Q_OBJECT
-public:
-    NetworkReplyProxy(QObject* parent, QNetworkReply* reply);
-    ~NetworkReplyProxy();
+    if (name === 'webpage' || name === 'fs') {
+        code = phantom.loadModuleSource(name);
+        func = new Function("exports", "window", code);
+        exports = {};
+        if (name === 'fs') {
+            exports = phantom.createFilesystem();
+        }
+        func.call({}, exports, {});
+        return exports;
+    }
 
-    void abort();
-    void close();
-    bool isSequential() const;
+    if (typeof exports === 'undefined') {
+        throw 'Unknown module ' + name + ' for require()';
+    }
+}
 
-    QString body();
-
-    // not possible...
-    void setReadBufferSize(qint64 size);
-
-    // QIODevice proxy...
-    virtual qint64 bytesAvailable() const;
-    virtual qint64 bytesToWrite() const;
-    virtual qint64 readData(char* data, qint64 maxlen);
-
-public Q_SLOTS:
-    void ignoreSslErrors();
-    void applyMetaData();
-
-    void errorInternal(QNetworkReply::NetworkError _error);
-    void readInternal();
-
-private:
-    QNetworkReply* m_reply;
-    QByteArray m_data;
-    QByteArray m_buffer;
-};
-
-#endif // NETWORKREPLYPROXY_H
+// Legacy way to use WebPage
+window.WebPage = require('webpage').create;

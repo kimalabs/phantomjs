@@ -39,6 +39,7 @@
 #include <QFileInfo>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QMouseEvent>
 #include <QNetworkAccessManager>
 #include <QPainter>
 #include <QPrinter>
@@ -46,13 +47,16 @@
 #include <QWebFrame>
 #include <QWebInspector>
 #include <QWebPage>
-#include <QMouseEvent>
 
+#include "networkaccessmanager.h"
 #include "utils.h"
 
 #include <gifwriter.h>
 
 #include "consts.h"
+
+// Ensure we have at least head and body.
+#define BLANK_HTML "<html><head></head><body></body></html>"
 
 class CustomPage: public QWebPage
 {
@@ -154,7 +158,7 @@ private:
     friend class WebPage;
 };
 
-WebPage::WebPage(QObject *parent)
+WebPage::WebPage(QObject *parent, const Config *config)
     : QObject(parent)
 {
     setObjectName("WebPage");
@@ -196,8 +200,15 @@ WebPage::WebPage(QObject *parent)
     m_webPage->settings()->setAttribute(QWebSettings::LocalStorageEnabled, true);
     m_webPage->settings()->setLocalStoragePath(QDesktopServices::storageLocation(QDesktopServices::DataLocation));
 
-    // Ensure we have at least document.body.
-    m_mainFrame->setHtml("<html><body></body></html>");
+    m_mainFrame->setHtml(BLANK_HTML);
+
+    // Custom network access manager to allow traffic monitoring.
+    m_networkAccessManager = new NetworkAccessManager(this, config);
+    m_webPage->setNetworkAccessManager(m_networkAccessManager);
+    connect(m_networkAccessManager, SIGNAL(resourceRequested(QVariant)),
+            SIGNAL(resourceRequested(QVariant)));
+    connect(m_networkAccessManager, SIGNAL(resourceReceived(QVariant)),
+            SIGNAL(resourceReceived(QVariant)));
 
     m_webPage->setViewportSize(QSize(400, 300));
 }
@@ -205,15 +216,6 @@ WebPage::WebPage(QObject *parent)
 QWebFrame *WebPage::mainFrame()
 {
     return m_mainFrame;
-}
-
-void WebPage::setNetworkAccessManager(QNetworkAccessManager *networkAccessManager)
-{
-    m_webPage->setNetworkAccessManager(networkAccessManager);
-    connect(networkAccessManager, SIGNAL(resourceRequested(QVariant)),
-            SIGNAL(resourceRequested(QVariant)));
-    connect(networkAccessManager, SIGNAL(resourceReceived(QVariant)),
-            SIGNAL(resourceReceived(QVariant)));
 }
 
 QString WebPage::content() const
@@ -262,6 +264,12 @@ void WebPage::applySettings(const QVariantMap &def)
 
     if (def.contains(PAGE_SETTINGS_USER_AGENT))
         m_webPage->m_userAgent = def[PAGE_SETTINGS_USER_AGENT].toString();
+
+    if (def.contains(PAGE_SETTINGS_USERNAME))
+        m_networkAccessManager->setUserName(def[PAGE_SETTINGS_USERNAME].toString());
+
+    if (def.contains(PAGE_SETTINGS_PASSWORD))
+        m_networkAccessManager->setPassword(def[PAGE_SETTINGS_PASSWORD].toString());
 }
 
 /* Accept all navigation requests except as specifically blocked in the blockedUrls list.
@@ -344,6 +352,7 @@ void WebPage::setScrollPosition(const QVariantMap &size)
     int top = size.value("top").toInt();
     int left = size.value("left").toInt();
     m_scrollPosition = QPoint(left,top);
+    m_mainFrame->setScrollPosition(m_scrollPosition);
 }
 
 QVariantMap WebPage::scrollPosition() const
@@ -423,7 +432,11 @@ void WebPage::openUrl(const QString &address, const QVariant &op, const QVariant
         return;
     }
 
-    m_mainFrame->load(QNetworkRequest(QUrl(address)), networkOp, body);
+    if (address == "about:blank") {
+        m_mainFrame->setHtml(BLANK_HTML);
+    } else {
+        m_mainFrame->load(QNetworkRequest(QUrl(address)), networkOp, body);
+    }
 }
 
 void WebPage::release()
@@ -452,18 +465,15 @@ bool WebPage::render(const QString &fileName)
 }
 
 QImage WebPage::renderImage()
-
 {
-    QSize viewportSize = m_webPage->viewportSize();
-    QRect frameRect = QRect(QPoint(0, 0), viewportSize);
+    QSize contentsSize = m_mainFrame->contentsSize();
+    contentsSize -= QSize(m_scrollPosition.x(), m_scrollPosition.y());
+    QRect frameRect = QRect(QPoint(0, 0), contentsSize);
     if (!m_clipRect.isNull())
         frameRect = m_clipRect;
 
-    if(!m_scrollPosition.isNull())
-      {
-	m_mainFrame->setScrollPosition(m_scrollPosition);
-      }
-    // m_webPage->setViewportSize(m_mainFrame->contentsSize());
+    QSize viewportSize = m_webPage->viewportSize();
+    m_webPage->setViewportSize(contentsSize);
 
     QImage buffer(frameRect.size(), QImage::Format_ARGB32);
     buffer.fill(qRgba(255, 255, 255, 0));
@@ -625,36 +635,37 @@ void WebPage::_appendScriptElement(const QString &scriptUrl) {
     m_mainFrame->evaluateJavaScript( QString(JS_APPEND_SCRIPT_ELEMENT).arg(scriptUrl) );
 }
 
-void WebPage::click( int x, int y )
+void WebPage::sendEvent(const QString &type, const QVariant &arg1, const QVariant &arg2)
 {
-    mouseMoveTo(x,y);
-    mouseDown();
-    mouseUp();
-}
+    if (type == "mousedown" ||  type == "mouseup" || type == "mousemove") {
+        QMouseEvent::Type eventType = QEvent::None;
+        Qt::MouseButton button = Qt::LeftButton;
+        Qt::MouseButtons buttons = Qt::LeftButton;
 
-void WebPage::mouseDown()
-{
-//    qDebug()  << "EventSender::mouseDown " << m_mousePos.x() << " " << m_mousePos.y();
-    QMouseEvent* event = new QMouseEvent(QEvent::MouseButtonPress, m_mousePos, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QApplication::postEvent( m_webPage, event);
-    QApplication::processEvents();
-}
+        if (type == "mousedown")
+            eventType = QEvent::MouseButtonPress;
+        if (type == "mouseup")
+            eventType = QEvent::MouseButtonRelease;
+        if (type == "mousemove") {
+            eventType = QEvent::MouseMove;
+            button = Qt::NoButton;
+            buttons = Qt::NoButton;
+        }
+        Q_ASSERT(eventType != QEvent::None);
 
-void WebPage::mouseUp()
-{
-//    qDebug()  << "EventSender::mouseUp " << m_mousePos.x() << " " << m_mousePos.y();
-    QMouseEvent* event = new QMouseEvent(QEvent::MouseButtonRelease, m_mousePos, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QApplication::postEvent(m_webPage, event);
-    QApplication::processEvents();
-}
+        int x = arg1.toInt();
+        int y = arg2.toInt();
+        QMouseEvent *event = new QMouseEvent(eventType, QPoint(x, y), button, buttons, Qt::NoModifier);
+        QApplication::postEvent(m_webPage, event);
+        QApplication::processEvents();
+        return;
+    }
 
-void WebPage::mouseMoveTo(int x, int y)
-{
-//    qDebug()  << "EventSender::mouseMoveTo " << x << " " << y;
-    m_mousePos = QPoint(x, y);
-    QMouseEvent* event = new QMouseEvent(QEvent::MouseMove, m_mousePos, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
-    QApplication::postEvent(m_webPage, event);
-    QApplication::processEvents();
+    if (type == "click") {
+        sendEvent("mousedown", arg1, arg2);
+        sendEvent("mouseup", arg1, arg2);
+        return;
+    }
 }
 
 QUrl WebPage::currentUrl() const

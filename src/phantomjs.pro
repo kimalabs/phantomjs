@@ -15,7 +15,6 @@ HEADERS += csconverter.h \
     webpage.h \
     consts.h \
     utils.h \
-    networkreplyproxy.h \
     networkaccessmanager.h \
     cookiejar.h \
     filesystem.h \
@@ -27,7 +26,6 @@ SOURCES += phantom.cpp \
     main.cpp \
     csconverter.cpp \
     utils.cpp \
-    networkreplyproxy.cpp \
     networkaccessmanager.cpp \
     cookiejar.cpp \
     filesystem.cpp \
@@ -35,8 +33,11 @@ SOURCES += phantom.cpp \
     encoding.cpp \
     config.cpp
 
-OTHER_FILES = bootstrap.js usage.txt \
-    configurator.js
+OTHER_FILES += usage.txt \
+    bootstrap.js \
+    configurator.js \
+    modules/fs.js \
+    modules/webpage.js
 
 include(gif/gif.pri)
 

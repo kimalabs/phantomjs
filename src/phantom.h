@@ -35,7 +35,6 @@
 
 class WebPage;
 #include "csconverter.h"
-#include "networkaccessmanager.h"
 #include "filesystem.h"
 #include "encoding.h"
 #include "config.h"
@@ -76,6 +75,8 @@ public:
 
 public slots:
     QObject *createWebPage();
+    QObject *createFilesystem();
+    QString loadModuleSource(const QString &name);
     bool injectJs(const QString &jsFilePath);
     void exit(int code = 0);
     QString readLine();
@@ -89,9 +90,8 @@ private:
     bool m_terminated;
     int m_returnValue;
     QString m_script;
-    NetworkAccessManager *m_netAccessMan;
     QVariantMap m_defaultPageSettings;
-    FileSystem m_filesystem;
+    FileSystem *m_filesystem;
     QList<QPointer<WebPage> > m_pages;
     Config m_config;
 };

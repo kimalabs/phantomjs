@@ -20,14 +20,15 @@
 
 # automatically convert Qt types by using api 2
 import sip
-sip.setapi('QString', 2)
-sip.setapi('QVariant', 2)
+for item in ('QDate', 'QDateTime', 'QString', 'QTextStream', 'QTime'
+             'QUrl', 'QVariant'):
+    sip.setapi(item, 2)
 
 import os
 import sys
 
 from PyQt4.QtCore import qInstallMsgHandler
-from PyQt4.QtGui import QIcon, QApplication
+from PyQt4.QtGui import QApplication, QIcon
 
 from plugincontroller import do_action
 # load plugins if running script directly
@@ -36,8 +37,10 @@ if __name__ == '__main__':
     load_plugins()
 
 import resources
+from __init__ import __version__
+from config import Config
 from phantom import Phantom
-from utils import argParser, MessageHandler, version
+from utils import argParser, MessageHandler
 
 # make keyboard interrupt quit program
 import signal
@@ -49,30 +52,70 @@ sys.stdout = SafeStreamFilter(sys.stdout)
 sys.stderr = SafeStreamFilter(sys.stderr)
 
 
-def parseArgs(args):
+def debug(debug_type):
+    def excepthook(type_, value, tb):
+        import traceback
+
+        # print the exception...
+        traceback.print_exception(type_, value, tb)
+        print
+        # ...then start the debugger in post-mortem mode
+        pdb.pm()
+
+    # we are NOT in interactive mode
+    if not hasattr(sys, 'ps1') or sys.stderr.target.isatty():
+        import pdb
+
+        from PyQt4.QtCore import pyqtRemoveInputHook
+        pyqtRemoveInputHook()
+
+        if debug_type == 'exception':
+            sys.excepthook = excepthook
+        elif debug_type == 'program':
+            pdb.set_trace()
+
+
+def parseArgs(app, args):
     # Handle all command-line options
     p = argParser()
     arg_data = p.parse_known_args(args)
     args = arg_data[0]
     args.script_args = arg_data[1]
 
-    args.disk_cache = False if args.disk_cache == 'no' else True
-    args.ignore_ssl_errors = False if args.ignore_ssl_errors == 'no' else True
-    args.load_images = True if args.load_images == 'yes' else False
-    args.load_plugins = False if args.load_plugins == 'no' else True
-    args.local_access_remote = False if args.local_access_remote == 'no' else True
+    # register an alternative Message Handler
+    messageHandler = MessageHandler(args.verbose)
+    qInstallMsgHandler(messageHandler.process)
 
-    if args.proxy:
-        item = args.proxy.split(':')
-        if len(item) < 2 or not len(item[1]):
-            p.print_help()
-            sys.exit(1)
-        args.proxy = item
+    file_check = (args.cookies_file, args.config)
+    for file_ in file_check:
+        if file_ is not None and not os.path.exists(file_):
+            sys.exit("No such file or directory: '%s'" % file_)
 
-    if args.cookies is not None and not os.path.exists(args.cookies):
-        sys.exit("No such file or directory: '%s'" % args.cookies)
+    if args.config:
+        config = Config(app, args.config)
+        # apply settings
+        for setting in config.settings:
+            setattr(args, config.settings[setting]['mapping'], config.property(setting))
 
-    do_action('ParseArgs')
+    split_check = (
+        (args.proxy, 'proxy'),
+    )
+    for arg, name in split_check:
+        if arg:
+            item = arg.split(':')
+            if len(item) < 2 or not len(item[1]):
+                p.print_help()
+                sys.exit(1)
+            setattr(args, name, item)
+
+    do_action('ParseArgs', args)
+
+    if args.debug:
+        debug(args.debug)
+
+    # verbose flag got changed on us, so we reload the flag
+    if messageHandler.verbose != args.verbose:
+        messageHandler.verbose = args.verbose
 
     if args.script is None:
         p.print_help()
@@ -85,19 +128,15 @@ def parseArgs(args):
 
 
 def main():
-    args = parseArgs(sys.argv[1:])
-
-    # register an alternative Message Handler
-    messageHandler = MessageHandler(args.verbose)
-    qInstallMsgHandler(messageHandler.process)
-
     app = QApplication(sys.argv)
 
     app.setWindowIcon(QIcon(':/resources/pyphantomjs-icon.png'))
     app.setApplicationName('PyPhantomJS')
     app.setOrganizationName('Umaclan Development')
     app.setOrganizationDomain('www.umaclan.com')
-    app.setApplicationVersion(version)
+    app.setApplicationVersion(__version__)
+
+    args = parseArgs(app, sys.argv[1:])
 
     phantom = Phantom(app, args)
 

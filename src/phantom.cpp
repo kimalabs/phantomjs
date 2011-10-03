@@ -48,7 +48,7 @@ Phantom::Phantom(QObject *parent)
     : QObject(parent)
     , m_terminated(false)
     , m_returnValue(0)
-    , m_netAccessMan(0)
+    , m_filesystem(0)
 {
     // second argument: script name
     QStringList args = QApplication::arguments();
@@ -60,7 +60,7 @@ Phantom::Phantom(QObject *parent)
 
     if (m_config.versionFlag()) {
         m_terminated = true;
-        Terminal::instance()->cout(QString("%1 (development)").arg(PHANTOMJS_VERSION_STRING));
+        Terminal::instance()->cout(QString("%1").arg(PHANTOMJS_VERSION_STRING));
         return;
     }
 
@@ -70,7 +70,7 @@ Phantom::Phantom(QObject *parent)
         return;
     }
 
-    m_page = new WebPage(this);
+    m_page = new WebPage(this, &m_config);
     m_pages.append(m_page);
 
     if (m_config.scriptFile().isEmpty()) {
@@ -91,10 +91,6 @@ Phantom::Phantom(QObject *parent)
     // Set script file encoding
     m_scriptFileEnc.setEncoding(m_config.scriptEncoding());
 
-    // Provide WebPage with a non-standard Network Access Manager
-    m_netAccessMan = new NetworkAccessManager(this, m_config.diskCacheEnabled(), m_config.cookieFile(), m_config.ignoreSslErrors());
-    m_page->setNetworkAccessManager(m_netAccessMan);
-
     connect(m_page, SIGNAL(javaScriptConsoleMessageSent(QString, int, QString)),
             SLOT(printConsoleMessage(QString, int, QString)));
 
@@ -103,25 +99,17 @@ Phantom::Phantom(QObject *parent)
     m_defaultPageSettings[PAGE_SETTINGS_JS_ENABLED] = QVariant::fromValue(true);
     m_defaultPageSettings[PAGE_SETTINGS_XSS_AUDITING] = QVariant::fromValue(false);
     m_defaultPageSettings[PAGE_SETTINGS_USER_AGENT] = QVariant::fromValue(m_page->userAgent());
-    m_defaultPageSettings[PAGE_SETTINGS_LOCAL_ACCESS_REMOTE] = QVariant::fromValue(m_config.localAccessRemote());
+    m_defaultPageSettings[PAGE_SETTINGS_LOCAL_ACCESS_REMOTE] = QVariant::fromValue(m_config.localToRemoteUrlAccessEnabled());
     m_page->applySettings(m_defaultPageSettings);
 
     setLibraryPath(QFileInfo(m_config.scriptFile()).dir().absolutePath());
 
     // Add 'phantom' and 'fs' object to the global scope
     m_page->mainFrame()->addToJavaScriptWindowObject("phantom", this);
-    m_page->mainFrame()->addToJavaScriptWindowObject("fs", &m_filesystem);
 
-    // Load all the required JavaScript 'shims'
-    QString jsShims[2] = {
-        ":/webpage-shim.js",
-        ":/fs-shim.js"
-    };
-    for (int i = 0, len = 2; i < len; ++i) {
-        QFile f(jsShims[i]);
-        f.open(QFile::ReadOnly); //< It's OK to assume this succeed. If it doesn't, we have a bigger problem.
-        m_page->mainFrame()->evaluateJavaScript(QString::fromUtf8(f.readAll()));
-    }
+    QFile f(":/bootstrap.js");
+    f.open(QFile::ReadOnly); //< It's OK to assume this succeed. If it doesn't, we have a bigger problem.
+    m_page->mainFrame()->evaluateJavaScript(QString::fromUtf8(f.readAll()));
 }
 
 QStringList Phantom::args() const
@@ -197,15 +185,37 @@ QString Phantom::readLine()
 // public slots:
 QObject *Phantom::createWebPage()
 {
-    WebPage *page = new WebPage(this);
+    WebPage *page = new WebPage(this, &m_config);
     m_pages.append(page);
     page->applySettings(m_defaultPageSettings);
-    page->setNetworkAccessManager(m_netAccessMan);
     page->setLibraryPath(QFileInfo(m_config.scriptFile()).dir().absolutePath());
     return page;
 }
 
-bool Phantom::injectJs(const QString &jsFilePath) {
+QObject *Phantom::createFilesystem()
+{
+    if (!m_filesystem)
+        m_filesystem = new FileSystem(this);
+
+    return m_filesystem;
+}
+
+QString Phantom::loadModuleSource(const QString &name)
+{
+    QString moduleSource;
+    QString moduleSourceFilePath = ":/modules/" + name + ".js";
+
+    QFile f(moduleSourceFilePath);
+    if (f.open(QFile::ReadOnly)) {
+        moduleSource = QString::fromUtf8(f.readAll());
+        f.close();
+    }
+
+    return moduleSource;
+}
+
+bool Phantom::injectJs(const QString &jsFilePath)
+{
     return Utils::injectJsInFrame(jsFilePath, libraryPath(), m_page->mainFrame());
 }
 
@@ -231,12 +241,12 @@ void Phantom::printConsoleMessage(const QString &message, int lineNumber, const 
 
 QVariantList Phantom::blockedUrls() const
 {
-    return m_netAccessMan->blockedUrls();
+    return m_page->blockedUrls();
 }
 
 void Phantom::setBlockedUrls(const QVariantList &urls)
 {
-    m_netAccessMan->setBlockedUrls(urls);
+  //  m_netAccessMan->setBlockedUrls(urls);
     m_page->setBlockedUrls(urls);
     QList<QPointer<WebPage> > ::Iterator it = m_pages.begin();
 

@@ -84,6 +84,10 @@ void Config::processArgs(const QStringList &args)
             setDiskCacheEnabled(false);
             continue;
         }
+        if (arg.startsWith("--max-disk-cache-size=")) {
+            setMaxDiskCacheSize(arg.mid(arg.indexOf("=") + 1).trimmed().toInt());
+            continue;
+        }
         if (arg == "--ignore-ssl-errors=yes") {
             setIgnoreSslErrors(true);
             continue;
@@ -92,20 +96,20 @@ void Config::processArgs(const QStringList &args)
             setIgnoreSslErrors(false);
             continue;
         }
-        if (arg == "--local-access-remote=no") {
-            setLocalAccessRemote(false);
+        if (arg == "--local-to-remote-url-access=no") {
+            setLocalToRemoteUrlAccessEnabled(false);
             continue;
         }
-        if (arg == "--local-access-remote=yes") {
-            setLocalAccessRemote(true);
+        if (arg == "--local-to-remote-url-access=yes") {
+            setLocalToRemoteUrlAccessEnabled(true);
             continue;
         }
         if (arg.startsWith("--proxy=")) {
             setProxy(arg.mid(8).trimmed());
             continue;
         }
-        if (arg.startsWith("--cookies=")) {
-            setCookieFile(arg.mid(10).trimmed());
+        if (arg.startsWith("--cookies-file=")) {
+            setCookiesFile(arg.mid(15).trimmed());
             continue;
         }
         if (arg.startsWith("--output-encoding=")) {
@@ -137,10 +141,34 @@ void Config::processArgs(const QStringList &args)
     }
 }
 
+static QString normalizePath(const QString &path)
+{
+    return path.isEmpty() ? path : QDir::fromNativeSeparators(path);
+}
+
+// THIS METHOD ASSUMES THAT content IS *NEVER* NULL!
+static bool readFile(const QString &path, QString *const content)
+{
+    // Ensure empty content
+    content->clear();
+
+    // Check existence and try to open as text
+    QFile file(path);
+    if (!file.exists() || !file.open(QFile::ReadOnly | QFile::Text)) {
+        return false;
+    }
+
+    content->append(QString::fromUtf8(file.readAll()).trimmed());
+
+    file.close();
+
+    return true;
+}
+
 void Config::loadJsonFile(const QString &filePath)
 {
     QString jsonConfig;
-    if (!readFile(normalisePath(filePath), &jsonConfig)) {
+    if (!readFile(normalizePath(filePath), &jsonConfig)) {
         Terminal::instance()->cerr("Unable to open config: \"" + filePath + "\"");
         return;
     } else if (jsonConfig.isEmpty()) {
@@ -179,14 +207,14 @@ void Config::setAutoLoadImages(const bool value)
     m_autoLoadImages = value;
 }
 
-QString Config::cookieFile() const
+QString Config::cookiesFile() const
 {
-    return m_cookieFile;
+    return m_cookiesFile;
 }
 
-void Config::setCookieFile(const QString &value)
+void Config::setCookiesFile(const QString &value)
 {
-    m_cookieFile = value;
+    m_cookiesFile = value;
 }
 
 bool Config::diskCacheEnabled() const
@@ -199,6 +227,16 @@ void Config::setDiskCacheEnabled(const bool value)
     m_diskCacheEnabled = value;
 }
 
+int Config::maxDiskCacheSize() const
+{
+    return m_maxDiskCacheSize;
+}
+
+void Config::setMaxDiskCacheSize(int maxDiskCacheSize)
+{
+    m_maxDiskCacheSize = maxDiskCacheSize;
+}
+
 bool Config::ignoreSslErrors() const
 {
     return m_ignoreSslErrors;
@@ -209,14 +247,14 @@ void Config::setIgnoreSslErrors(const bool value)
     m_ignoreSslErrors = value;
 }
 
-bool Config::localAccessRemote() const
+bool Config::localToRemoteUrlAccessEnabled() const
 {
-    return m_localAccessRemote;
+    return m_localToRemoteUrlAccessEnabled;
 }
 
-void Config::setLocalAccessRemote(const bool value)
+void Config::setLocalToRemoteUrlAccessEnabled(const bool value)
 {
-    m_localAccessRemote = value;
+    m_localToRemoteUrlAccessEnabled = value;
 }
 
 QString Config::outputEncoding() const
@@ -339,10 +377,11 @@ void Config::setVersionFlag(const bool value)
 void Config::resetToDefaults()
 {
     m_autoLoadImages = true;
-    m_cookieFile.clear();
+    m_cookiesFile = QString();
     m_diskCacheEnabled = false;
+    m_maxDiskCacheSize = -1;
     m_ignoreSslErrors = false;
-    m_localAccessRemote = false;
+    m_localToRemoteUrlAccessEnabled = false;
     m_outputEncoding = "UTF-8";
     m_pluginsEnabled = false;
     m_proxyHost.clear();
@@ -362,29 +401,4 @@ void Config::setProxyHost(const QString &value)
 void Config::setProxyPort(const int value)
 {
     m_proxyPort = value;
-}
-
-// private: (static)
-QString Config::normalisePath(const QString &path)
-{
-    return path.isEmpty() ? path : QDir::fromNativeSeparators(path);
-}
-
-// THIS METHOD ASSUMES THAT content IS *NEVER* NULL!
-bool Config::readFile(const QString &path, QString *const content)
-{
-    // Ensure empty content
-    content->clear();
-
-    // Check existence and try to open as text
-    QFile file(path);
-    if (!file.exists() || !file.open(QFile::ReadOnly | QFile::Text)) {
-        return false;
-    }
-
-    content->append(QString::fromUtf8(file.readAll()).trimmed());
-
-    file.close();
-
-    return true;
 }
