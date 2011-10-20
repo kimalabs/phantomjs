@@ -236,7 +236,9 @@ void Phantom::printConsoleMessage(const QString &message, int lineNumber, const 
     if (!source.isEmpty())
         msg = source + ":" + QString::number(lineNumber) + " " + msg;
     Terminal::instance()->cout(msg);
-    Terminal::instance()->cerr(msg);
+    if (m_config.logToStderr()) {
+        Terminal::instance()->cerr(msg);
+    }
 }
 
 QVariantList Phantom::blockedUrls() const

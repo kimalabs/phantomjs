@@ -42,6 +42,7 @@ class Config: QObject
     Q_PROPERTY(int maxDiskCacheSize READ maxDiskCacheSize WRITE setMaxDiskCacheSize)
     Q_PROPERTY(bool ignoreSslErrors READ ignoreSslErrors WRITE setIgnoreSslErrors)
     Q_PROPERTY(bool localToRemoteUrlAccessEnabled READ localToRemoteUrlAccessEnabled WRITE setLocalToRemoteUrlAccessEnabled)
+    Q_PROPERTY(bool logToStderr READ logToStderr WRITE setLogToStderr)
     Q_PROPERTY(QString outputEncoding READ outputEncoding WRITE setOutputEncoding)
     Q_PROPERTY(bool pluginsEnabled READ pluginsEnabled WRITE setPluginsEnabled)
     Q_PROPERTY(QString proxy READ proxy WRITE setProxy)
@@ -71,6 +72,9 @@ public:
 
     bool localToRemoteUrlAccessEnabled() const;
     void setLocalToRemoteUrlAccessEnabled(const bool value);
+
+    bool logToStderr() const;
+    void setLogToStderr(const bool value);
 
     QString outputEncoding() const;
     void setOutputEncoding(const QString &value);
@@ -111,6 +115,7 @@ private:
     int m_maxDiskCacheSize;
     bool m_ignoreSslErrors;
     bool m_localToRemoteUrlAccessEnabled;
+    bool m_logToStderr;
     QString m_outputEncoding;
     bool m_pluginsEnabled;
     QString m_proxyHost;

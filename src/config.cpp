@@ -104,6 +104,14 @@ void Config::processArgs(const QStringList &args)
             setLocalToRemoteUrlAccessEnabled(true);
             continue;
         }
+        if (arg == "--log-to-stderr=no") {
+            setLogToStderr(false);
+            continue;
+        }
+        if (arg == "--log-to-stderr=yes") {
+            setLogToStderr(true);
+            continue;
+        }
         if (arg.startsWith("--proxy=")) {
             setProxy(arg.mid(8).trimmed());
             continue;
@@ -257,6 +265,16 @@ void Config::setLocalToRemoteUrlAccessEnabled(const bool value)
     m_localToRemoteUrlAccessEnabled = value;
 }
 
+bool Config::logToStderr() const
+{
+    return m_logToStderr;
+}
+
+void Config::setLogToStderr(const bool value)
+{
+    m_logToStderr = value;
+}
+
 QString Config::outputEncoding() const
 {
     return m_outputEncoding;
@@ -382,6 +400,7 @@ void Config::resetToDefaults()
     m_maxDiskCacheSize = -1;
     m_ignoreSslErrors = false;
     m_localToRemoteUrlAccessEnabled = false;
+    m_logToStderr = false;
     m_outputEncoding = "UTF-8";
     m_pluginsEnabled = false;
     m_proxyHost.clear();
