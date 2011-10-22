@@ -259,8 +259,10 @@ void NetworkAccessManager::handleFinished(QNetworkReply *reply)
 }
 
 void NetworkAccessManager::sslErrors(const QList<QSslError> & errors) {
-  foreach (QSslError error, errors) {
-    std::cerr << "SSL Error: " << qPrintable(error.errorString()) << std::endl;
+  if (!m_ignoreSslErrors) {
+    foreach (QSslError error, errors) {
+      std::cerr << "SSL Error: " << qPrintable(error.errorString()) << std::endl;
+    }
   }
 }
 
