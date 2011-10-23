@@ -130,13 +130,13 @@ bool NetworkAccessManager::shouldLoadUrl ( const QString & url )
         if(item.canConvert<QRegExp>()) {
             QRegExp regexValue = item.toRegExp();
             if(regexValue.indexIn(url) != -1) {
-                std::cerr << ">>BLOCKING URL " << qPrintable(url) << " due to regex match." << std::endl;
+                //std::cerr << ">>BLOCKING URL " << qPrintable(url) << " due to regex match." << std::endl;
                 return false;
             }
         } else if(item.canConvert<QString>()) {
             QString stringValue = item.toString();
             if(url.indexOf(stringValue) == 0) {
-                std::cerr << ">>BLOCKING URL " << qPrintable(url) << " due to string match." << std::endl;
+                //std::cerr << ">>BLOCKING URL " << qPrintable(url) << " due to string match." << std::endl;
                 return false;
             }
         }
