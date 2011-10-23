@@ -121,7 +121,6 @@ void NetworkAccessManager::setBlockedUrls(const QVariantList &urls)
 // protected
 bool NetworkAccessManager::shouldLoadUrl ( const QString & url )
 {
-    return true;
     if(m_blockedUrls.isEmpty()) return true;
 
     QVariantList::Iterator it = m_blockedUrls.begin();
@@ -131,13 +130,13 @@ bool NetworkAccessManager::shouldLoadUrl ( const QString & url )
         if(item.canConvert<QRegExp>()) {
             QRegExp regexValue = item.toRegExp();
             if(regexValue.indexIn(url) != -1) {
-                std::cerr << "Blocking URL " << qPrintable(url) << " due to regex match." << std::endl;
+                std::cerr << ">>BLOCKING URL " << qPrintable(url) << " due to regex match." << std::endl;
                 return false;
             }
         } else if(item.canConvert<QString>()) {
             QString stringValue = item.toString();
             if(url.indexOf(stringValue) == 0) {
-                std::cerr << "Blocking URL " << qPrintable(url) << " due to string match. << std::endl";
+                std::cerr << ">>BLOCKING URL " << qPrintable(url) << " due to string match." << std::endl;
                 return false;
             }
         }
@@ -154,7 +153,6 @@ QNetworkReply *NetworkAccessManager::createRequest(Operation op, const QNetworkR
     QNetworkReply *reply;
 
     if(!shouldLoadUrl(req.url().toString())) {
-        std::cerr << "Blocking network request to " << qPrintable(req.url().toString()) << std::endl;
         QNetworkRequest fakeRequest = QNetworkRequest(req);
         fakeRequest.setUrl(QUrl("about:blank"));
         reply = QNetworkAccessManager::createRequest(op, fakeRequest, outgoingData);

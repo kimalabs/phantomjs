@@ -37,6 +37,8 @@
 #include <QFile>
 #include <QWebInspector>
 
+#include <iostream>
+
 #include "consts.h"
 #include "terminal.h"
 #include "utils.h"
@@ -189,6 +191,7 @@ QObject *Phantom::createWebPage()
     m_pages.append(page);
     page->applySettings(m_defaultPageSettings);
     page->setLibraryPath(QFileInfo(m_config.scriptFile()).dir().absolutePath());
+    page->setBlockedUrls(m_page->blockedUrls());
     return page;
 }
 
@@ -248,7 +251,6 @@ QVariantList Phantom::blockedUrls() const
 
 void Phantom::setBlockedUrls(const QVariantList &urls)
 {
-  //  m_netAccessMan->setBlockedUrls(urls);
     m_page->setBlockedUrls(urls);
     QList<QPointer<WebPage> > ::Iterator it = m_pages.begin();
 

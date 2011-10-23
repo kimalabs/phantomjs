@@ -237,6 +237,7 @@ QVariantList WebPage::blockedUrls() const
 void WebPage::setBlockedUrls(const QVariantList &urls)
 {
     m_blockedUrls = urls;
+    m_networkAccessManager->setBlockedUrls(urls);
 }
 
 
@@ -288,13 +289,13 @@ bool WebPage::acceptNavigationRequest ( QWebFrame * frame, const QNetworkRequest
         if(item.canConvert<QRegExp>()) {
             QRegExp regexValue = item.toRegExp();
             if(regexValue.indexIn(request.url().toString()) != -1) {
-                std::cerr << "Blocking URL " << qPrintable(request.url().toString()) << " due to regex match.";
+                std::cerr << "BLOCKING URL " << qPrintable(request.url().toString()) << " due to regex match.";
                 return false;
             }
         } else if(item.canConvert<QString>()) {
             QString stringValue = item.toString();
             if(request.url().toString().indexOf(stringValue) == 0) {
-                std::cerr << "Blocking URL " << qPrintable(request.url().toString()) << " due to string match.";
+                std::cerr << "BLOCKING URL " << qPrintable(request.url().toString()) << " due to string match.";
                 return false;
             }
         }
