@@ -247,12 +247,6 @@ void NetworkAccessManager::handleFinished(QNetworkReply *reply)
     m_ids.remove(reply);
     m_started.remove(reply);
 
-    if(reply->error() == QNetworkReply::NoError && !reply->header(QNetworkRequest::ContentTypeHeader).isValid()) {
-        std::cerr << "WARNING: Missing content-type header from reply: ["<< qPrintable(data["status"].toString()) <<
-         "] [" << qPrintable(data["statusText"].toString()) << "] from " << qPrintable(data["url"].toString()) <<
-         std::endl;
-    }
-
     emit resourceReceived(data);
 }
 
