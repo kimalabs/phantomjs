@@ -165,6 +165,8 @@ QNetworkReply *NetworkAccessManager::createRequest(Operation op, const QNetworkR
         reply->ignoreSslErrors();
     }
 
+    connect(reply, SIGNAL(error(QNetworkReply::NetworkError)), SLOT(handleError(QNetworkReply::NetworkError)));
+
     QVariantList headers;
     foreach (QByteArray headerName, req.rawHeaderList()) {
         QVariantMap header;
@@ -223,6 +225,10 @@ void NetworkAccessManager::handleStarted()
     emit resourceReceived(data);
 }
 
+void NetworkAccessManager::handleError(QNetworkReply::NetworkError code) {
+    std::cerr << "A network request failed with qnetworkreply error code: " << code << std::endl;
+}
+
 void NetworkAccessManager::handleFinished(QNetworkReply *reply)
 {
     QVariantList headers;
@@ -235,6 +241,8 @@ void NetworkAccessManager::handleFinished(QNetworkReply *reply)
 
     QVariantMap data;
     data["stage"] = "end";
+    data["errorCode"] = reply->error();
+    data["errorMessage"] = reply->errorString();
     data["id"] = m_ids.value(reply);
     data["url"] = reply->url().toString();
     data["status"] = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
